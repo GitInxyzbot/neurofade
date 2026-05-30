@@ -1,12 +1,18 @@
 # NeuroFade
 
-Live Forgetting Visualizer — see your neural network forget in real time.
+**Watch your neural network forget in real time.**
 
-![Example](assets/demo.gif)
+Live forgetting visualizer for continual learning — tracks per-layer, per-neuron activation retention as you train on new tasks.
 
-## What
+🌐 **[neurofade.gitinxyzbot.io](https://gitinxyzbot.github.io/neurofade/)** · 📦 **[PyPI](https://pypi.org/project/neurofade/)**
 
-Tracks per-neuron activation retention across training tasks and renders the forgetting process as animated heatmaps. Watch your model lose knowledge in real time.
+---
+
+## The Problem
+
+Catastrophic forgetting is invisible. You fine-tune on task 2, your model silently destroys task 1. You only find out when you run an eval — and by then the damage is done.
+
+NeuroFade makes it undeniable. Green = alive. Red = forgetting. Dark = dead.
 
 ## Install
 
@@ -14,30 +20,53 @@ Tracks per-neuron activation retention across training tasks and renders the for
 pip install neurofade
 ```
 
-## Quick Start
+## Usage
 
 ```python
 from neurofade import ForgettingVisualizer
 
-viz = ForgettingVisualizer(model, baseline_task=train_task_1_loader)
+# After training Task 1
+viz = ForgettingVisualizer(model)
+viz.set_baseline(task1_loader)
 
-# Wraps your training loop
+# Train Task 2 — watch it forget
 with viz.watch():
-    trainer.fit(task_2_loader)
+    trainer.fit(task2_loader)
 
-viz.export("forgetting.mp4")
-viz.share()  # Upload to public URL
+# See the damage
+viz.summary()              # terminal table with per-layer retention
+viz.export("forget.gif")   # shareable heatmap animation
 ```
 
-## Why
+## Output
 
-Catastrophic forgetting is invisible until it tanks your model. NeuroFade makes it undeniable.
+```
+Layer                                     Avg Retention  Alive %
+─────────────────────────────────────────────────────────────────
+0                                              100.0%  100.0%
+1                                                4.1%    5.1%   ← 🔴 dying
+2                                               99.8%  100.0%
+3                                               16.5%   17.0%
+4                                              100.0%  100.0%
+5                                               18.0%   18.0%
+6                                              100.0%  100.0%
+7                                                0.0%    0.0%   ← 💀 dead
+...
+```
 
-- **Layers fade in real-time** — see which neurons die first
-- **Export as GIF/MP4** — shareable artifacts
-- **Per-task baselines** — measures retention against any previous task
-- **Framework-agnostic** — works with PyTorch, TensorFlow, JAX
+## Why This Matters
 
-## The Vibe
+- Know **which layers** to apply EWC, replay, or PackNet — not guesswork
+- Catch forgetting **during training**, not after
+- Export shareable GIFs of your model's death
+- One-line integration with any PyTorch model
 
-Your model is dying. Now you can see it.
+## Requirements
+
+- Python ≥ 3.9
+- PyTorch ≥ 2.0
+- Pillow ≥ 9.0
+
+## License
+
+MIT
