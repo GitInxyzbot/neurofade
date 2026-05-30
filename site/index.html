@@ -1,0 +1,589 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>NeuroFade — Watch Your Neural Network Forget</title>
+<meta name="description" content="Live forgetting visualizer for continual learning. See catastrophic forgetting happen in real time, layer by layer, neuron by neuron.">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Outfit:wght@300;400;500;600;700;800&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet">
+<style>
+/* ════════ RESET & VARIABLES ════════ */
+*,*::before,*::after{margin:0;padding:0;box-sizing:border-box}
+:root{
+  --bg:#06060a;--surface:#0e0e14;--surface-rgb:14,14,20;
+  --glass:rgba(14,14,20,0.7);--glass-light:rgba(20,20,30,0.5);
+  --border:rgba(255,255,255,0.08);--border-hover:rgba(255,255,255,0.15);
+  --text:#f0f0f5;--text-dim:#8888a0;--text-muted:#555566;
+  --accent:#00ffc8;--accent-glow:rgba(0,255,200,0.3);
+  --red:#ff4060;--red-glow:rgba(255,64,96,0.3);
+  --yellow:#ffca28;--orange:#ff8c42;
+  --green:#00ffc8;--green-dark:#00aa80;
+  --dead:#252530;
+  --font:'Outfit',sans-serif;--mono:'JetBrains Mono',monospace;
+  --radius:16px;--radius-sm:10px;--radius-lg:24px;
+}
+html{scroll-behavior:smooth}
+body{background:var(--bg);color:var(--text);font-family:var(--font);line-height:1.6;overflow-x:hidden;min-height:100vh}
+a{color:var(--accent);text-decoration:none;transition:color .2s}
+a:hover{color:#00ffdd}
+
+/* ════════ BACKGROUND EFFECTS ════════ */
+.bg-canvas{
+  position:fixed;inset:0;z-index:-1;overflow:hidden;
+}
+.bg-canvas::before{
+  content:'';position:absolute;width:800px;height:800px;
+  background:radial-gradient(circle,var(--accent-glow) 0%,transparent 70%);
+  top:-200px;left:50%;transform:translateX(-50%);filter:blur(100px);opacity:0.4;animation:float 20s ease-in-out infinite;
+}
+.bg-canvas::after{
+  content:'';position:absolute;width:600px;height:600px;
+  background:radial-gradient(circle,var(--red-glow) 0%,transparent 70%);
+  bottom:-100px;right:-100px;filter:blur(120px);opacity:0.3;animation:float 25s ease-in-out infinite reverse;
+}
+@keyframes float{
+  0%,100%{transform:translateX(-50%)translateY(0)scale(1)}
+  50%{transform:translateX(-50%)translateY(30px)scale(1.05)}
+}
+
+/* ════════ TYPOGRAPHY ════════ */
+h1,h2,h3{font-weight:700;letter-spacing:-0.02em}
+h1{font-size:clamp(3rem,8vw,5.5rem);font-weight:800;background:linear-gradient(135deg,#fff 0%,var(--accent) 50%,var(--yellow) 100%);-webkit-background-clip:text;-webkit-text-fill-color:transparent;background-clip:text}
+h2{font-size:clamp(1.8rem,4vw,2.5rem);margin-bottom:1rem}
+
+/* ════════ GLASSMORPHISM CARDS ════════ */
+.glass{
+  background:var(--glass);backdrop-filter:blur(20px);-webkit-backdrop-filter:blur(20px);
+  border:1px solid var(--border);border-radius:var(--radius);
+}
+.glass-light{
+  background:var(--glass-light);backdrop-filter:blur(12px);-webkit-backdrop-filter:blur(12px);
+}
+
+/* ════════ BUTTONS ════════ */
+.btn{
+  display:inline-flex;align-items:center;gap:.6rem;padding:.9rem 1.8rem;border-radius:var(--radius);
+  font-size:1rem;font-weight:600;transition:all .3s cubic-bezier(.4,0,0.2,1);border:none;cursor:pointer;
+}
+.btn-primary{
+  background:linear-gradient(135deg,var(--accent),var(--green-dark));color:#000;box-shadow:0 4px 20px var(--accent-glow);
+}
+.btn-primary:hover{transform:translateY(-2px);box-shadow:0 8px 30px var(--accent-glow)}
+.btn-secondary{
+  background:var(--glass);border:1px solid var(--border);color:var(--text);
+}
+.btn-secondary:hover{border-color:var(--accent);color:var(--accent);transform:translateY(-2px)}
+
+/* ════════ NAV ════════ */
+nav{
+  position:fixed;top:0;left:0;right:0;z-index:100;padding:1rem 2rem;
+  display:flex;justify-content:space-between;align-items:center;
+  background:rgba(6,6,10,0.8);backdrop-filter:blur(20px);border-bottom:1px solid var(--border);
+}
+.logo{display:flex;align-items:center;gap:.5rem;font-weight:700;font-size:1.2rem}
+.logo-icon{
+  width:32px;height:32px;background:linear-gradient(135deg,var(--accent),var(--red));border-radius:8px;
+  display:flex;align-items:center;justify-content:center;font-size:1rem
+}
+.nav-links{display:flex;gap:2rem}
+.nav-links a{color:var(--text-dim);font-size:.95rem;font-weight:500}
+.nav-links a:hover{color:var(--accent)}
+
+/* ════════ HERO ════════ */
+.hero{min-height:100vh;display:flex;flex-direction:column;align-items:center;justify-content:center;text-align-center;padding:6rem 2rem 4rem}
+.hero h1{margin-bottom:.5rem;animation:fadeInUp .8s ease-out}
+.tagline{font-size:clamp(1.1rem,2.5vw,1.4rem);color:var(--text-dim);max-width:580px;margin-bottom:2.5rem;animation:fadeInUp .8s ease-out .1s both}
+.cta-row{display:flex;gap:1rem;flex-wrap:wrap;justify-content:center;margin-bottom:4rem;animation:fadeInUp .8s ease-out .2s both}
+@keyframes fadeInUp{from{opacity:0;transform:translateY(20px)}to{opacity:1;transform:translateY(0)}}
+
+/* ════════ LIVE DEMO ════════ */
+.demo-container{max-width:760px;margin:0 auto;animation:fadeInUp .8s ease-out .3s both}
+.demo-window{
+  border-radius:var(--radius-lg);overflow:hidden;
+  box-shadow:0 20px 60px rgba(0,0,0,0.5),0 0 0 1px var(--border),inset 0 1px 0 rgba(255,255,255,0.05);
+}
+.demo-header{display:flex;align-items:center;gap:.6rem;padding:1rem 1.25rem;background:rgba(0,0,0,0.4);border-bottom:1px solid var(--border)}
+.dots{display:flex;gap:.5rem}
+.dots span{width:12px;height:12px;border-radius:50%;background:var(--surface)}
+.dots .r{background:#ff5f57}.dots .y{background:#febc2e}.dots .g{background:#28c840}
+.demo-title{font-size:.85rem;color:var(--text-dim);margin-left:.5rem;font-family:var(--mono)}
+canvas#viz{display:block;width:100%;image-rendering:pixelated;background:#08080c}
+.demo-footer{
+  display:flex;align-items:center;gap:1rem;padding:.8rem 1.25rem;background:rgba(0,0,0,0.4);border-top:1px solid var(--border)
+}
+.demo-btn{
+  display:inline-flex;align-items:center;gap:.4rem;padding:.5rem 1rem;
+  background:var(--surface);border:1px solid var(--border);border-radius:var(--radius-sm);
+  color:var(--text);font-size:.85rem;font-family:var(--mono);cursor:pointer;transition:all .2s;
+}
+.demo-btn:hover{border-color:var(--accent);color:var(--accent)}
+.step-counter{margin-left:auto;font-family:var(--mono);font-size:.85rem;color:var(--text-dim)}
+.step-counter span{color:var(--accent)}
+
+/* ════════ SECTIONS ════════ */
+section{padding:6rem 2rem;max-width:1100px;margin:0 auto}
+.section-header{text-align:center;margin-bottom:3rem}
+.section-header p{color:var(--text-dim);font-size:1.15rem;max-width:600px;margin:0 auto}
+
+/* ════════ FEATURES ════════ */
+.features-grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(280px,1fr));gap:1.5rem}
+.feature-card{
+  padding:2rem;border-radius:var(--radius);transition:all .3s cubic-bezier(.4,0,0.2,1);
+  position:relative;overflow:hidden;
+}
+.feature-card::before{
+  content:'';position:absolute;top:0;left:0;right:0;height:1px;
+  background:linear-gradient(90deg,transparent,var(--border-hover),transparent);
+}
+.feature-card:hover{transform:translateY(-4px);border-color:var(--border-hover)}
+.feature-icon{
+  width:52px;height:52px;border-radius:14px;display:flex;align-items:center;justify-content:center;
+  font-size:1.5rem;margin-bottom:1.25rem;
+}
+.feature-icon.purple{background:linear-gradient(135deg,#6366f1,#8b5cf6)}
+.feature-icon.red{background:linear-gradient(135deg,#f43f5e,#ef4444)}
+.feature-icon.yellow{background:linear-gradient(135deg,#f59e0b,#eab308)}
+.feature-icon.green{background:linear-gradient(135deg,#10b981,#059669)}
+.feature-card h3{font-size:1.25rem;margin-bottom:.5rem}
+.feature-card p{color:var(--text-dim);font-size:.95rem;line-height:1.6}
+
+/* ════════ HOW IT WORKS ════════ */
+.steps-grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(300px,1fr));gap:2rem}
+.step-card{
+  display:flex;gap:1.5rem;padding:1.5rem;border-radius:var(--radius-sm);background:var(--glass)
+}
+.step-num{
+  width:48px;height:48px;flex-shrink:0;border-radius:50%;
+  background:linear-gradient(135deg,var(--accent),var(--green-dark));
+  display:flex;align-items:center;justify-content:center;font-weight:800;font-size:1.2rem;color:#000
+}
+.step-content h3{font-size:1.1rem;margin-bottom:.4rem}
+.step-content p{color:var(--text-dim);font-size:.9rem}
+
+/* ════════ CODE BLOCK ════════ */
+.code-block{
+  background:rgba(0,0,0,0.5);border:1px solid var(--border);border-radius:var(--radius);
+  padding:1.5rem 2rem;overflow-x:auto;font-family:var(--mono);font-size:.9rem;
+  line-height:1.8;margin:2rem 0;position:relative;
+}
+.code-block::before{
+  content:'';position:absolute;top:0;left:0;right:0;height:1px;
+  background:linear-gradient(90deg,var(--accent),var(--red),var(--yellow));
+}
+.kw{color:#c792ea}.fn{color:#82aaff}.str{color:#c3e88d}.cm{color:#555566}.num{color:#f78c6c}
+
+/* ════════ INSTALL BANNER ════════ */
+.install-banner{
+  display:flex;align-items:center;justify-content:center;gap:1rem;
+  background:var(--glass);border:1px solid var(--border);border-radius:var(--radius);
+  padding:1rem 2rem;max-width:440px;margin:2rem auto;cursor:pointer;transition:all .2s;
+}
+.install-banner:hover{border-color:var(--accent);box-shadow:0 0 30px var(--accent-glow)}
+.install-banner .prompt{color:var(--text-dim);font-family:var(--mono)}
+.install-banner code{font-family:var(--mono);font-size:1.15rem;color:var(--accent)}
+.install-copy{color:var(--accent);font-size:.85rem;opacity:0;transition:opacity .2s}
+.install-banner.copied .install-copy{opacity:1}
+
+/* ════════ STATS ════════ */
+.stats-row{display:flex;gap:3rem;justify-content:center;flex-wrap:wrap;margin:3rem 0}
+.stat-item{text-align:center}
+.stat-val{font-size:2.5rem;font-weight:800;background:linear-gradient(135deg,var(--accent),var(--yellow));-webkit-background-clip:text;-webkit-text-fill-color:transparent;background-clip:text}
+.stat-label{color:var(--text-muted);font-size:.9rem;margin-top:.25rem}
+
+/* ════════ FOOTER ════════ */
+footer{
+  text-align:center;padding:4rem 2rem;border-top:1px solid var(--border);color:var(--text-muted);font-size:.9rem
+}
+footer a{color:var(--text-dim)}
+footer a:hover{color:var(--accent)}
+.footer-links{display:flex;gap:1.5rem;justify-content:center;margin-bottom:1.5rem}
+.github-link{display:inline-flex;align-items:center;gap:.5rem;color:var(--text-dim);font-size:.95rem}
+.github-link:hover{color:#fff}
+
+/* ════════ RESPONSIVE ════════ */
+@media(max-width:600px){
+  nav{padding:1rem}
+  .nav-links{display:none}
+  .hero{padding:5rem 1.5rem 3rem}
+  .features-grid{grid-template-columns:1fr}
+  .stats-row{gap:2rem}
+  .stat-val{font-size:2rem}
+}
+
+/* ════════ ANIMATIONS ════════ */
+[data-aos]{opacity:0;transform:translateY(20px);transition:all .6s cubic-bezier(.4,0,0.2,1)}
+[data-aos].aos-visible{opacity:1;transform:translateY(0)}
+</style>
+</head>
+<body>
+<div class="bg-canvas"></div>
+
+<!-- ════════ NAV ════════ -->
+<nav>
+  <div class="logo">
+    <div class="logo-icon">◉</div>
+    <span>NeuroFade</span>
+  </div>
+  <div class="nav-links">
+    <a href="#what">What</a>
+    <a href="#how">How</a>
+    <a href="#base">Base</a>
+    <a href="#install">Install</a>
+    <a href="https://pypi.org/project/neurofade/" target="_blank">PyPI</a>
+  </div>
+</nav>
+
+<!-- ════════ HERO ════════ -->
+<section class="hero">
+  <h1>NeuroFade</h1>
+  <p class="tagline">Watch your neural network forget in real time. Layer by layer. Neuron by neuron. Catastrophic forgetting visualized.</p>
+  <div class="cta-row">
+    <a href="#install" class="btn btn-primary">
+      <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M12 5v14M5 12l7 7 7-7"/></svg>
+      pip install neurofade
+    </a>
+    <a href="https://pypi.org/project/neurofade/" class="btn btn-secondary" target="_blank">
+      <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M18 13v6a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h6"/><polyline points="15 3 21 3 21 9"/><line x1="10" y1="14" x2="21" y2="3"/></svg>
+      View on PyPI
+    </a>
+  </div>
+
+  <!-- Live Demo -->
+  <div class="demo-container">
+    <div class="demo-window glass">
+      <div class="demo-header">
+        <div class="dots">
+          <span class="r"></span><span class="y"></span><span class="g"></span>
+        </div>
+        <span class="demo-title">neurofade — live forgetting simulation</span>
+      </div>
+      <canvas id="viz" width="760" height="380"></canvas>
+      <div class="demo-footer">
+        <button class="demo-btn" id="btn-play">
+          <svg width="14" height="14" viewBox="0 0 24 24" fill="currentColor"><rect x="6" y="4" width="4" height="16"/><rect x="14" y="4" width="4" height="16"/></svg>
+          Pause
+        </button>
+        <button class="demo-btn" id="btn-reset">
+          <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M3 12a9 9 0 0 1 9-9 9.5 9.5 0 0 1 6.32 2.84L21 8"/><path d="M21 3v5h-5"/><path d="M21 12a9 9 0 0 1-9 9 9.5 9.5 0 0 1-6.32-2.84L3 16"/><path d="M3 21v-5h5"/></svg>
+          Reset
+        </button>
+        <div class="step-counter">Training Step: <span id="step-label">0</span></div>
+      </div>
+    </div>
+  </div>
+</section>
+
+<!-- ════════ WHAT IS THIS ════════ -->
+<section id="what">
+  <div class="section-header">
+    <h2>Catastrophic Forgetting Is Invisible</h2>
+    <p>When you fine-tune a model on new data, it silently overwrites what it learned before. You don't see the damage until testing — and by then it's too late.</p>
+  </div>
+
+  <div class="features-grid">
+    <div class="feature-card glass">
+      <div class="feature-icon purple">🔬</div>
+      <h3>Per-Layer Tracking</h3>
+      <p>See exactly which layers degrade first. Pinpoint the forgetting bottleneck in your architecture.</p>
+    </div>
+    <div class="feature-card glass">
+      <div class="feature-icon red">📹</div>
+      <h3>Export as GIF</h3>
+      <p>Shareable artifacts that tell a story. Post your model's "death" on Twitter. That's viral content.</p>
+    </div>
+    <div class="feature-card glass">
+      <div class="feature-icon yellow">⚡</div>
+      <h3>One-Line Integration</h3>
+      <p>Wrap your training loop with <code>viz.watch()</code>. Works with any PyTorch model automatically.</p>
+    </div>
+    <div class="feature-card glass">
+      <div class="feature-icon green">🧠</div>
+      <h3>Retention Scores</h3>
+      <p>Per-neuron activation retention. Know if your model is 90% alive or 10% alive. Quantify the damage.</p>
+    </div>
+  </div>
+</section>
+
+<!-- ════════ HOW IT WORKS ════════ -->
+<section id="how">
+  <div class="section-header">
+    <h2>How It Works</h2>
+  </div>
+
+  <div class="steps-grid">
+    <div class="step-card glass">
+      <div class="step-num">1</div>
+      <div class="step-content">
+        <h3>Capture Baseline</h3>
+        <p>Run your trained model on reference data. NeuroFade records per-neuron activation magnitudes as thehealthy state.</p>
+      </div>
+    </div>
+    <div class="step-card glass">
+      <div class="step-num">2</div>
+      <div class="step-content">
+        <h3>Watch Training</h3>
+        <p>Train on new data inside <code>viz.watch()</code>. Forward hooks capture activations every step and compare against baseline.</p>
+      </div>
+    </div>
+    <div class="step-card glass">
+      <div class="step-num">3</div>
+      <div class="step-content">
+        <h3>See Forgetting</h3>
+        <p>Export as GIF, print a summary table, or pipe into your monitoring. Layer 7 at 0%? Now you know where to fix.</p>
+      </div>
+    </div>
+  </div>
+
+  <div class="code-block">
+<span class="cm"># After training on Task 1</span>
+<span class="kw">from</span> neurofade <span class="kw">import</span> ForgettingVisualizer
+
+viz = ForgettingVisualizer(model)
+viz.set_baseline(task1_loader)
+
+<span class="cm"># Train on Task 2 — forgetting happens here</span>
+<span class="kw">with</span> viz.watch():
+    trainer.fit(task2_loader)
+
+<span class="cm"># See the damage</span>
+viz.summary()           <span class="cm"># terminal table</span>
+viz.export(<span class="str">"forgetting.gif"</span>)  <span class="cm"># shareable artifact</span>
+  </div>
+
+  <div class="stats-row">
+    <div class="stat-item">
+      <div class="stat-val">4</div>
+      <div class="stat-label">Hook Types</div>
+    </div>
+    <div class="stat-item">
+      <div class="stat-val">∞</div>
+      <div class="stat-label">Models Supported</div>
+    </div>
+    <div class="stat-item">
+      <div class="stat-val">1</div>
+      <div class="stat-label">Line to Integrate</div>
+    </div>
+  </div>
+</section>
+
+<!-- ════════ BASE ATTESTATION ════════ -->
+<section id="base">
+  <div class="section-header">
+    <h2>🔗 On-Chain Trust — Base Integration</h2>
+    <p class="section-sub">Post verifiable AI model health certificates to Base mainnet. One tx hash = one immutable proof your model hasn't forgotten.</p>
+  </div>
+
+  <div class="features-grid" style="grid-template-columns:repeat(auto-fit,minmax(220px,1fr));gap:1.5rem;margin-bottom:2.5rem">
+    <div class="feature-card glass">
+      <div class="feature-icon">🔐</div>
+      <h3>Immutable Proof</h3>
+      <p>SHA-256 report hash posted on-chain. Anyone can verify your model's health — no trust required.</p>
+    </div>
+    <div class="feature-card glass">
+      <div class="feature-icon">🤖</div>
+      <h3>AI Agent Trust</h3>
+      <p>Virtuals &amp; ERC-8004 agents can post attestations before each update. Users verify before trusting.</p>
+    </div>
+    <div class="feature-card glass">
+      <div class="feature-icon">⚡</div>
+      <h3>Zero Gas</h3>
+      <p>Calldata-only tx. No contract deploy, no ABI. Just a verifiable record on Base, forever.</p>
+    </div>
+    <div class="feature-card glass">
+      <div class="feature-icon">🔍</div>
+      <h3>Public Verification</h3>
+      <p>Anyone can query the NFRD prefix on Basescan and audit every attestation ever posted.</p>
+    </div>
+  </div>
+
+  <div class="code-block glass" style="margin:0 auto;max-width:700px">
+    <div class="code-header"><span class="code-dot"></span><span class="code-dot"></span><span class="code-dot"></span><span style="margin-left:auto;color:var(--text-muted);font-size:.8rem">post_to_base.py</span></div>
+    <pre><code><span class="kw">from</span> neurofade <span class="kw">import</span> ForgettingVisualizer
+<span class="kw">from</span> neurofade.chain.attestation <span class="kw">import</span> post_attestation
+
+viz = ForgettingVisualizer(model)
+viz.set_baseline(task_a_loader)
+
+<span class="kw">with</span> viz.watch():
+    train(model, task_b_loader)  <span class="comment"># forgetting happens here</span>
+
+<span class="comment"># Post health certificate to Base</span>
+cert = post_attestation(viz, private_key=<span class="str">"0x..."</span>, model=model)
+print(cert.tx_hash)  <span class="comment"># basescan.org/tx/0x...</span></code></pre>
+  </div>
+
+  <div style="text-align:center;margin-top:1.5rem">
+    <p style="color:var(--text-muted);font-size:.9rem">Install with chain support: <code style="background:rgba(0,255,200,.1);padding:2px 8px;border-radius:4px">pip install neurofade[chain]</code></p>
+  </div>
+</section>
+
+<!-- ════════ INSTALL ════════ -->
+<section id="install">
+  <div class="section-header">
+    <h2>Install</h2>
+  </div>
+
+  <div class="install-banner glass" onclick="copyInstall()" title="Click to copy">
+    <span class="prompt">$</span>
+    <code>pip install neurofade</code>
+    <span class="install-copy">Copied!</span>
+  </div>
+
+  <p style="text-align:center;color:var(--text-muted);margin-top:1rem;font-size:.95rem">
+    Requires Python ≥ 3.9 · PyTorch ≥ 2.0 · Pillow ≥ 9.0
+  </p>
+</section>
+
+<!-- ════════ FOOTER ════════ -->
+<footer>
+  <div class="footer-links">
+    <a href="https://pypi.org/project/neurofade/">PyPI</a>
+    <a href="https://github.com/NeuroFade/neurofade">GitHub</a>
+    <a href="#">MIT License</a>
+  </div>
+  <a href="https://github.com/NeuroFade/neurofade" class="github-link" target="_blank">
+    <svg width="20" height="20" viewBox="0 0 24 24" fill="currentColor"><path d="M12 0c-6.626 0-12 5.373-12 12 0 5.302 3.438 9.8 8.207 11.387.599.111.793-.261.793-.577v-2.234c-3.338.726-4.033-1.416-4.033-1.416-.546-1.387-1.333-1.756-1.333-1.756-1.089-.745.083-.729.083-.729 1.205.084 1.839 1.237 1.839 1.237 1.07 1.834 2.807 1.304 3.492.997.107-.776.417-1.305.76-1.605-2.665-.3-5.466-1.332-5.466-5.93 0-1.31.465-2.38 1.235-3.22-.114-.303-.54-1.523.114-3.176 0 0 1.008-.322 3.301 1.23.957-.266 1.983-.399 3.003-.404 1.02.005 2.047.138 3.006.404 2.291-1.552 3.297-1.23 3.297-1.23.654 1.653.228 2.873.114 3.176.77.84 1.235 1.91 1.235 3.22 0 4.61-2.807 5.626-5.475 5.921.43.372.823 1.102.823 2.222v3.293c0 .319.192.694.801.576 4.765-1.589 8.199-6.086 8.199-11.386 0-6.627-5.373-12-12-12z"/></svg>
+    NeuroFade/neurofade
+  </a>
+  <p style="margin-top:1.5rem;color:var(--text-muted)">Your model is forgetting. Now you can see it.</p>
+</footer>
+
+<!-- ════════ LIVE DEMO SCRIPT ════════ -->
+<script>
+const canvas = document.getElementById('viz');
+const ctx = canvas.getContext('2d');
+const W = canvas.width, H = canvas.height;
+
+const LAYERS = [
+  {name:'linear.0',   n:512, decay:0.018, resist:0.96},
+  {name:'relu.0',     n:512, decay:0.11,  resist:0.12},
+  {name:'linear.1',   n:512, decay:0.012, resist:0.97},
+  {name:'relu.1',     n:512, decay:0.085, resist:0.28},
+  {name:'linear.2',   n:256, decay:0.022, resist:0.93},
+  {name:'relu.2',     n:256, decay:0.095, resist:0.22},
+  {name:'linear.3',   n:128, decay:0.028, resist:0.88},
+  {name:'relu.3',     n:128, decay:0.17,  resist:0.04},
+  {name:'linear.4',   n:64,  decay:0.035, resist:0.72},
+  {name:'relu.4',     n:64,  decay:0.105, resist:0.18},
+  {name:'output',     n:10,  decay:0.045, resist:0.62},
+];
+
+let neurons = LAYERS.map(l => {
+  const arr = new Float32Array(l.n);
+  for(let i=0;i<l.n;i++) arr[i] = 1.0;
+  return arr;
+});
+
+let step = 0, playing = true, animId;
+const LABEL_W = 80, BAR_Y0 = 12, ROW_H = Math.floor((H - BAR_Y0 - 10) / LAYERS.length);
+
+function tick(){
+  step++;
+  for(let li=0; li<LAYERS.length; li++){
+    const l = LAYERS[li], arr = neurons[li];
+    for(let i=0; i<l.n; i++){
+      if(Math.random() > l.resist){
+        arr[i] = Math.max(0, arr[i] - l.decay * (0.5 + Math.random()));
+      }
+      if(Math.random() < 0.015) arr[i] = Math.min(1, arr[i] + 0.012);
+    }
+  }
+}
+
+function draw(){
+  ctx.fillStyle = '#08080c';
+  ctx.fillRect(0, 0, W, H);
+  
+  const barW = W - LABEL_W - 20;
+  
+  for(let li=0; li<LAYERS.length; li++){
+    const l = LAYERS[li], arr = neurons[li];
+    const y = BAR_Y0 + li * ROW_H;
+    
+    // Layer label
+    ctx.fillStyle = '#545468';
+    ctx.font = '11px "JetBrains Mono", monospace';
+    ctx.fillText(l.name, 6, y + ROW_H/2 + 4);
+    
+    // Neuron bars
+    const barW_i = Math.floor(barW / 8);
+    for(let bx=0; bx<8; bx++){
+      for(let px=0; px<barW_i; px++){
+        const ni = Math.floor(bx * l.n / 8);
+        const v = arr[ni];
+        let r, g, b;
+        
+        if(v < 0.04){
+          r = 36; g = 36; b = 42;
+        }else if(v >= 0.65){
+          r = 0;
+          g = Math.floor(40 + 190 * v);
+          b = Math.floor(25 + 12 * v);
+        }else if(v >= 0.3){
+          r = Math.floor(200 * (1-v));
+          g = Math.floor(185 * v);
+          b = 0;
+        }else{
+          r = Math.min(255, Math.floor(140 + 110 * (1-v)));
+          g = 0;
+          b = Math.floor(80 * v);
+        }
+        
+        ctx.fillStyle = `rgb(${r},${g},${b})`;
+        ctx.fillRect(LABEL_W + px + bx*barW_i, y + 2, 1, ROW_H - 4);
+      }
+    }
+    
+    // Avg retention %
+    let sum = 0;
+    for(let i=0; i<l.n; i++) sum += arr[i];
+    const avg = sum / l.n;
+    ctx.fillStyle = avg > 0.45 ? '#707088' : '#ff4060';
+    ctx.fillText(Math.round(avg*100) + '%', W - 38, y + ROW_H/2 + 4);
+  }
+  
+  document.getElementById('step-label').textContent = step;
+}
+
+function loop(){
+  if(!playing) return;
+  tick();
+  draw();
+  animId = setTimeout(() => requestAnimationFrame(loop), 100);
+}
+
+// Controls
+const btnPlay = document.getElementById('btn-play');
+btnPlay.addEventListener('click', () => {
+  playing = !playing;
+  btnPlay.innerHTML = playing 
+    ? '<svg width="14" height="14" viewBox="0 0 24 24" fill="currentColor"><rect x="6" y="4" width="4" height="16"/><rect x="14" y="4" width="4" height="16"/></svg> Pause'
+    : '<svg width="14" height="14" viewBox="0 0 24 24" fill="currentColor"><polygon points="5,3 19,12 5,21"/></svg> Play';
+  if(playing) loop();
+});
+
+document.getElementById('btn-reset').addEventListener('click', () => {
+  neurons = LAYERS.map(l => {
+    const arr = new Float32Array(l.n);
+    for(let i=0;i<l.n;i++) arr[i] = 1.0;
+    return arr;
+  });
+  step = 0;
+  draw();
+});
+
+// Copy install
+function copyInstall(){
+  navigator.clipboard.writeText('pip install neurofade');
+  document.querySelector('.install-banner').classList.add('copied');
+  setTimeout(() => document.querySelector('.install-banner').classList.remove('copied'), 1500);
+}
+
+// INIT
+draw();
+loop();
+</script>
+</body>
+</html>

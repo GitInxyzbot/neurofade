@@ -2,6 +2,7 @@
 NeuroFade Core
 
 Live Forgetting Visualizer — tracks neuronal activation retention across training tasks.
+On-chain attestation via Base: neurofade.chain.attestation
 """
 
 import torch
